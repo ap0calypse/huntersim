@@ -1,0 +1,502 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Time::HiRes qw(usleep);
+use Curses;
+use lib "./modules/";
+use Territory;
+use Carnivore;
+use Herbivore;
+use Plant;
+
+# two hashes for the carnivore and herbivore objects
+my (%c, %h);
+
+# the characters for the random name of the object
+# maybe some day this won't be enough anymore ... but hey
+# then maybe mutations happen ;)
+my @chars = ("A" .. "Z", "a" .. "z", 0 .. 9);
+
+# create the carnivores. every carnivore has a random name of length 10
+for (1 .. $NUM_CARNIVORES) {
+    my $tempname = join ("", @chars[map {rand @chars} (1 .. 10)] );
+    $c{$tempname} = Carnivore->new("C_$tempname");
+}
+
+# create the herbivores. every herbivore has a random name of length 10
+for (1 .. $NUM_HERBIVORES) {
+    my $tempname = join ("", @chars[map {rand @chars} (1 .. 10)] );
+    $h{$tempname} = Herbivore->new("H_$tempname");
+}
+
+# function to create a new carnivore
+sub spawn_carnivore {
+    my ($skill, $x, $y) = (shift, shift, shift);
+    $skill = 0 if $skill < 0;
+    my $tempname = join ("", @chars[map {rand @chars} (1 .. 8)] );
+    $c{$tempname} = Carnivore->new("C_$tempname", $skill, $x, $y);
+    $c{$tempname}->born_starve;
+}
+
+# function to create a new herbivore
+sub spawn_herbivore {
+    my ($skill, $x, $y) = (shift, shift, shift);
+    $skill = 0 if $skill < 0;
+    my $tempname = join ("", @chars[map {rand @chars} (1 .. 8)] );
+    $h{$tempname} = Herbivore->new("H_$tempname", $skill, $x, $y);
+}
+
+# the visualisation
+sub print_matrix {
+    initscr;
+    
+    my $cycle = shift;
+    
+    if($LINES < ($HEIGHT + 5) || $COLS < ($LENGTH + 20)) {
+        endwin;
+        die "Your terminal needs to be e bigger\n";
+    }
+    clear; noecho;
+
+    start_color();
+    init_pair(1, COLOR_RED, COLOR_BLACK);     # carnivore
+    init_pair(2, COLOR_YELLOW, COLOR_BLACK);  # herbivore
+    init_pair(3, COLOR_BLACK, COLOR_BLACK);   # background
+    init_pair(4, COLOR_YELLOW, COLOR_BLACK);  # herbivore legend
+    init_pair(5, COLOR_RED, COLOR_BLACK);     # carnivore legend
+    init_pair(6, COLOR_WHITE, COLOR_BLACK);   # raging carnivore
+    init_pair(7, COLOR_GREEN, COLOR_BLACK);   # cycles
+    
+    for my $x (1 .. $LENGTH) {
+        for my $y (1 .. $HEIGHT) {
+            attron(COLOR_PAIR(3));
+            addstr($y,$x," ");
+            attroff(COLOR_PAIR(3));
+        }
+    }
+
+    for (keys %h) {
+            attron(COLOR_PAIR(2));
+            attron(A_BOLD);
+            addstr($h{$_}->where_y, $h{$_}->where_x,"#");
+            attroff(A_BOLD);
+            attroff(COLOR_PAIR(2));
+    }
+    for (keys %c) {
+        if ($c{$_}->how_hungry > $RAGE_CYCLES) {
+            attron(COLOR_PAIR(6));
+            addstr($c{$_}->where_y, $c{$_}->where_x,'@');
+            attroff(COLOR_PAIR(6));
+        }
+        elsif ($c{$_}->how_hungry > $HUNGRY_CYCLES ) {
+            attron(COLOR_PAIR(1));
+            addstr($c{$_}->where_y, $c{$_}->where_x,'@');
+            attroff(COLOR_PAIR(1));
+        }
+        else {
+            attron(COLOR_PAIR(1));
+            attron(A_BOLD);
+            addstr($c{$_}->where_y, $c{$_}->where_x,'@');
+            attroff(A_BOLD);
+            attroff(COLOR_PAIR(1));
+        }
+    }
+    
+    attron(COLOR_PAIR(5));
+    attron(A_BOLD);
+    addstr(2,($LENGTH + 2),"Carnivores: " . scalar keys %c);
+    attroff(A_BOLD);
+    attroff(COLOR_PAIR(5));
+    attron(COLOR_PAIR(4));
+    attron(A_BOLD);
+    addstr(4,($LENGTH + 2),"Herbivores: " . scalar keys %h);
+    attroff(A_BOLD);
+    attroff(COLOR_PAIR(4));
+    
+    attron(COLOR_PAIR(5));
+    attron(A_BOLD);
+    addstr(7,($LENGTH + 2),"C. seeking partner");
+    attroff(A_BOLD);
+    attroff(COLOR_PAIR(4));
+    
+    
+    attron(COLOR_PAIR(5));
+    addstr(9,($LENGTH + 2),"C. hunting");
+    attroff(COLOR_PAIR(4));
+    
+    attron(COLOR_PAIR(6));
+    addstr(11,($LENGTH + 2),"C. hunting in rage");
+    attroff(COLOR_PAIR(6));
+    attron(COLOR_PAIR(7));
+    addstr(15,($LENGTH + 2),"Cycle: " . $cycle);
+    attroff(COLOR_PAIR(7));
+    refresh;
+} 
+my $cy = 0;
+
+while (keys %h || keys %c) {
+    &print_matrix($cy);
+
+#################################################################
+# START OF THE CARNIVORE LOOP
+#################################################################
+# here we go through all the carnivores ...
+    for my $i (keys %c) {
+
+# in the beginning no direction seems better than any other ...
+        my %nextmove = ( 'right' => 0, 'left' => 0, 'up' => 0, 'down' => 0 );
+
+# we take a look through the herbivores
+        for my $x (keys %h) {
+
+# if it is a hungry carnivore ...
+            if ($c{$i}->how_hungry > $HUNGRY_CYCLES) {
+
+# ... and the herbivore has bad luck and is on the same field ...
+                if ( ($h{$x}->where_x == $c{$i}->where_x) 
+                  && ($h{$x}->where_y == $c{$i}->where_y) ) {
+
+# ... and is actually not very skilled, it is eaten by the carnivore.
+# because of this, the hunting skill of the carnivore rises and he isn't
+# hungry anymore. The herbivore is killed (deleted).
+                    if($c{$i}->how_skilled > $h{$x}->how_skilled) {
+                        $c{$i}->eat;
+                        $c{$i}->raise_skill;
+                        delete $h{$x};
+                    }
+
+# if we have a skilled herbivore, it flees and gets some skill points.
+                    else {
+                        $h{$x}->raise_skill;
+                    }
+
+                }
+
+# if the carnivore sees a herbivore next to him which is in his range, he gives a
+# decision point to this direction.
+
+                elsif ( ( ($h{$x}->where_x - $c{$i}->where_x) > 1) 
+                    &&  ( ($h{$x}->where_x - $c{$i}->where_x) < $SIGHT_CARNIVORES) 
+                    &&    ($h{$x}->where_y == $c{$i}->where_y) ) {
+
+                    $nextmove{'right'} += 1;
+                }
+                elsif ( ( ($h{$x}->where_x - $c{$i}->where_x) < (-1)) 
+                    && (  ($h{$x}->where_x - $c{$i}->where_x) > ($SIGHT_CARNIVORES - $SIGHT_CARNIVORES * 2)) 
+                    &&    ($h{$x}->where_y == $c{$i}->where_y) ) {
+
+                    $nextmove{'left'} += 1;
+                }
+                elsif ( ( ($h{$x}->where_y - $c{$i}->where_y) > 1) 
+                    &&  ( ($h{$x}->where_y - $c{$i}->where_y) < $SIGHT_CARNIVORES) 
+                    &&    ($h{$x}->where_x ==  $c{$i}->where_x) ) {
+
+                    $nextmove{'down'} += 1;
+                }
+                elsif ( ( ($h{$x}->where_y - $c{$i}->where_y) < (-1)) 
+                    &&  ( ($h{$x}->where_y - $c{$i}->where_y) > ($SIGHT_CARNIVORES - $SIGHT_CARNIVORES * 2)) 
+                    &&    ($h{$x}->where_x ==  $c{$i}->where_x) ) {
+
+                    $nextmove{'up'} += 1;
+                }
+
+            }
+
+        }
+
+# define the density values. we don't want 10000 animals on one field. thats unrealistic.
+        my $dense = 1;
+        my @too_dense;
+
+# we check now the position of the other carnivores around. we loop through them ...
+        for my $y (keys %c) {
+
+# if it isn't the carnivore from the outer loop ...
+            if ($y ne $i) {
+
+# ... but this bastard is on the same position, increment the density
+                if ( ($c{$i}->where_x == $c{$y}->where_x) 
+                &&   ($c{$i}->where_y == $c{$y}->where_y) ) {
+
+                    $dense++;
+                    if ($dense >= $DENSITY_CARNIVORES) {
+                        push @too_dense, $i;
+                    }
+
+                    else {
+# if both of the carnivores are horny ...
+                        if (($c{$i}->how_horny == 0) && ($c{$y}->how_horny == 0)) {
+                            if ($c{$i}->how_hungry <= $HUNGRY_CYCLES  && $c{$y}->how_hungry <= $HUNGRY_CYCLES) {
+                                my $new_skill = ($c{$i}->how_skilled + $c{$y}->how_skilled) / 2;
+                                &spawn_carnivore($new_skill, $c{$i}->where_x, $c{$i}->where_y);
+                                $c{$i}->cast;
+                                $c{$y}->cast;
+                                $dense++;
+                            }
+                        }
+                    }
+# if the density is finally too high (defined in Territory), ban the carnivore 
+                }
+
+# if there is a carnivore near to us we give a decision point to the direction
+                elsif ( ( ($c{$i}->where_x - $c{$y}->where_x) > $LOOSE_CARNIVORES) 
+                    &&  ( ($c{$i}->where_x - $c{$y}->where_x) < $SIGHT_CARNIVORES) 
+                    &&    ($c{$i}->where_y == $c{$y}->where_y) ) {
+                        $nextmove{'left'} += 1;
+                }
+                elsif ( ( ($c{$i}->where_x - $c{$y}->where_x) < ($LOOSE_CARNIVORES - $LOOSE_CARNIVORES * 2)) 
+                    &&  ( ($c{$i}->where_x - $c{$y}->where_x) > ($SIGHT_CARNIVORES - $SIGHT_CARNIVORES * 2)) 
+                    &&    ($c{$i}->where_y == $c{$y}->where_y) ) {
+                        $nextmove{'right'} += 1;
+                }
+                elsif ( ( ($c{$i}->where_y - $c{$y}->where_y) > $LOOSE_CARNIVORES) 
+                    &&  ( ($c{$i}->where_y - $c{$y}->where_y) < $SIGHT_CARNIVORES) 
+                    &&    ($c{$i}->where_x == $c{$y}->where_x) ) {
+                        $nextmove{'up'} += 1;
+                }
+                elsif ( ( ($c{$i}->where_y - $c{$y}->where_y) < ($LOOSE_CARNIVORES - $LOOSE_CARNIVORES * 2)) 
+                    &&  ( ($c{$i}->where_y - $c{$y}->where_y) > ($SIGHT_CARNIVORES - $SIGHT_CARNIVORES * 2)) 
+                    &&    ($c{$i}->where_x == $c{$y}->where_x)) {
+                        $nextmove{'down'} += 1;
+                }
+            }
+        }
+
+# decide where to move because of the decision points earlier defined
+        if (    ($nextmove{'right'} > $nextmove{'left'}) 
+            &&  ($nextmove{'right'} > $nextmove{'up'})
+            &&  ($nextmove{'right'} > $nextmove{'down'}) ) {
+
+# if we are hungry we move into the best direction, if very hungry, we move
+# fast!
+            $c{$i}->move('right');
+       
+            if ($c{$i}->how_hungry > $RAGE_CYCLES) { 
+                $c{$i}->move('right');
+            }
+        }
+
+# the same procedure as above ...
+        elsif ( ($nextmove{'left'} > $nextmove{'right'}) 
+            &&  ($nextmove{'left'} > $nextmove{'up'})
+            &&  ($nextmove{'left'} > $nextmove{'down'}) ) {
+                
+            $c{$i}->move('left');
+        
+            if ($c{$i}->how_hungry > $RAGE_CYCLES) { 
+                $c{$i}->move('left');
+            }
+        }
+
+# and again ...
+        elsif ( ($nextmove{'up'} > $nextmove{'right'}) 
+            &&  ($nextmove{'up'} > $nextmove{'left'})
+            &&  ($nextmove{'up'} > $nextmove{'down'}) ) {
+                
+            $c{$i}->move('up');
+            if ($c{$i}->how_hungry > $RAGE_CYCLES) { 
+                $c{$i}->move('up');
+            }
+        }
+        
+# and agein .... last time
+        elsif ( ($nextmove{'down'} > $nextmove{'right'}) 
+            &&  ($nextmove{'down'} > $nextmove{'left'})
+            &&  ($nextmove{'down'} > $nextmove{'up'}) ) {
+                
+            $c{$i}->move('down');
+            if ($c{$i}->how_hungry > $RAGE_CYCLES) { 
+                $c{$i}->move('down');
+            }
+        }
+
+# if we don't have a preferred direction ... we move randomly
+        else {
+            $c{$i}->move;
+        }
+
+# we starve, age and get horny with every cycle ... totally normal
+        $c{$i}->age;
+        $c{$i}->starve;
+        $c{$i}->get_horny;
+
+        
+# if the carnivore is too old or is starving, it dies.
+# if it is too old, it loses his skills
+        if ($c{$i}->how_old >= $MAX_AGE_CARNIVORES) {
+            delete  $c{$i};
+        }
+        elsif ($c{$i}->how_hungry >= $STARVE_CYCLES) {
+            delete  $c{$i};
+        }
+        elsif ($c{$i}->how_old >= $MAX_MATE_CARNIVORES) {
+            $c{$i}->cast;
+        }
+
+# the overpopulated fields are cleared ... bye bye poor guys ...
+        for (@too_dense) {
+            delete $c{$_};
+        }
+    }
+
+#################################################################
+# END OF CARNIVORE LOOP
+#################################################################
+
+#################################################################
+# START OF HERBIVORE LOOP
+#################################################################
+# loop through all the herbivores
+    for my $j (keys %h) {
+
+# decisions for the direction cleared
+        my %nextmove = ( 'right' => 0, 'left' => 0, 'up' => 0, 'down' => 0 );
+
+# the density values to avoid too many individuals on the same position
+        my $dense = 1;
+        my @too_dense;
+
+# go through the other herbivores
+        for my $z (keys %h) {
+
+# if it isn't the herbivore from the outer loop
+            if ($z ne $j) {
+
+# but if the bastard is on my position
+                if ( ($h{$j}->where_x == $h{$z}->where_x) 
+                &&   ($h{$j}->where_y == $h{$z}->where_y)) {
+                
+# increase density and abandon the overpopulation
+                    $dense++;
+                    if ($dense >= $DENSITY_HERBIVORES) {
+                        push @too_dense, $j;
+                    }
+
+# if we have 3 horny herbivores here ... we cast a new herbivore
+                    else {
+                        if ( ($h{$j}->how_horny == 0) && ($h{$z}->how_horny == 0)) {
+                            my $new_skill = ($h{$j}->how_skilled + $h{$z}->how_skilled) / 2;
+                            &spawn_herbivore($new_skill, $h{$j}->where_x, $h{$j}->where_y);
+                            $h{$j}->cast;
+                            $h{$z}->cast;
+                            $dense++;
+                        }
+                    }
+                }
+
+# if there is no one on my position, seek for a pack to follow. do this by setting 
+# the different values for the directions
+                if ( ( ($h{$j}->where_x - $h{$z}->where_x) > $LOOSE_HERBIVORES) 
+                    &&  ( ($h{$j}->where_x - $h{$z}->where_x) < $SIGHT_HERBIVORES) 
+                    &&    ($h{$j}->where_y == $h{$z}->where_y) ) {
+                    $nextmove{'left'} += 1;
+                }
+
+# and again ....
+                if ( ( ($h{$j}->where_x - $h{$z}->where_x) < ($LOOSE_HERBIVORES - $LOOSE_HERBIVORES * 2)) 
+                    &&  ( ($h{$j}->where_x - $h{$z}->where_x) > ($SIGHT_HERBIVORES - $SIGHT_HERBIVORES * 2)) 
+                    &&    ($h{$j}->where_y == $h{$z}->where_y) ) {
+                    $nextmove{'right'} += 1;
+                }
+
+# and ... yeah ... again
+                if ( ( ($h{$j}->where_y - $h{$z}->where_y) > $LOOSE_HERBIVORES) 
+                    &&  ( ($h{$j}->where_y - $h{$z}->where_y) < $SIGHT_HERBIVORES) 
+                    &&    ($h{$j}->where_x ==  $h{$z}->where_x) ) {
+                    $nextmove{'up'} += 1;
+                }
+
+# last time now ... really ...
+                if ( ( ($h{$j}->where_y - $h{$z}->where_y) < ($LOOSE_HERBIVORES - $LOOSE_HERBIVORES * 2)) 
+                    &&  ( ($h{$j}->where_y - $h{$z}->where_y) > ($SIGHT_HERBIVORES - $SIGHT_HERBIVORES * 2)) 
+                    &&    ($h{$j}->where_x ==  $h{$z}->where_x)) {
+                    $nextmove{'down'} += 1;
+                }
+            }
+        }
+
+# search for carnivores .. they are dangerous 
+        for my $k (keys %c) {
+
+# if there is a carnivore near us, set the value for the direction.
+# if the carnivore is left to us
+            if ( ($h{$j}->where_x - $c{$k}->where_x >= 0) 
+              && ($h{$j}->where_x - $c{$k}->where_x <= $CHICKEN_RADIUS)
+              && ($h{$j}->where_y == $c{$k}->where_y) ) {
+                $nextmove{'right'} += 2;
+            }
+
+            if ( ($h{$j}->where_x - $c{$k}->where_x <= 0)
+              && ($h{$j}->where_x - $c{$k}->where_x >= $CHICKEN_RADIUS)
+              && ($h{$j}->where_y == $c{$k}->where_y) ) {
+                $nextmove{'left'} += 2;
+            }
+
+            if ( ($h{$j}->where_y - $c{$k}->where_y >= 0) 
+              && ($h{$j}->where_y - $c{$k}->where_y <= $CHICKEN_RADIUS)
+              && ($h{$j}->where_x == $c{$k}->where_x) ) {
+                $nextmove{'down'} += 2;
+            }
+            
+            if ( ($h{$j}->where_y - $c{$k}->where_y <= 0) 
+              && ($h{$j}->where_y - $c{$k}->where_y >= $CHICKEN_RADIUS)
+              && ($h{$j}->where_x == $c{$k}->where_x) ) {
+                $nextmove{'up'} += 2;
+            }
+            
+        }
+
+        if (    ($nextmove{'right'} > $nextmove{'left'}) 
+            &&  ($nextmove{'right'} > $nextmove{'up'})
+            &&  ($nextmove{'right'} > $nextmove{'down'})
+        ) {
+            $h{$j}->move('right');
+        }
+        elsif ( ($nextmove{'left'} > $nextmove{'right'}) 
+            &&  ($nextmove{'left'} > $nextmove{'up'})
+            &&  ($nextmove{'left'} > $nextmove{'down'})
+        ) {
+            $h{$j}->move('left');
+        }
+        elsif ( ($nextmove{'up'} > $nextmove{'left'}) 
+            &&  ($nextmove{'up'} > $nextmove{'right'})
+            &&  ($nextmove{'up'} > $nextmove{'down'})
+        ) {
+            $h{$j}->move('up');
+        }
+        elsif ( ($nextmove{'down'} > $nextmove{'left'}) 
+            &&  ($nextmove{'down'} > $nextmove{'up'})
+            &&  ($nextmove{'down'} > $nextmove{'right'})
+        ) {
+            $h{$j}->move('down');
+        }
+        else {
+            $h{$j}->move;
+        }
+        $h{$j}->age;
+        $h{$j}->starve;
+        $h{$j}->get_horny;
+       
+# if the herbivore is too old, it dies
+# if it kis above the mate age, it loses skill points
+        if ($h{$j}->how_old >= $MAX_AGE_HERBIVORES) {
+            delete  $h{$j};
+        }
+        elsif ($h{$j}->how_old >= $MAX_MATE_HERBIVORES) {
+            $h{$j}->cast;
+        }
+
+# byebye overpopulation
+        for (@too_dense) {
+            delete $h{$_};
+        }
+    }
+#################################################################
+# END OF HERBIVORE LOOP
+#################################################################
+
+# sleep 50000 nanoseconds in the best case ... and increment the cycle variable
+    usleep(50000);
+    $cy++;
+}
+endwin;
