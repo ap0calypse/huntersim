@@ -7,7 +7,6 @@ use lib "./modules/";
 use Territory;
 use Carnivore;
 use Herbivore;
-use Plant;
 
 # two hashes for the carnivore and herbivore objects
 my (%c, %h);
