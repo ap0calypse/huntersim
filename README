@@ -1,22 +1,21 @@
-huntersim 0.1
-
 1. What the hell is this?
 2. Why did you do this?
 3. Prerequisites
 4. Features
 5. Configuration
 6. How to run
-7. Bugs and known issues
-8. License stuff 
+7. I don't like this behaviour of animal X, change it!
+8. Bugs and known issues
+9. License stuff 
 
 
 1. What the hell is this?
-#############################
+########################################################
 
 What you have just downloaded is a small simulation of a population 
-consisting of herbivores and carnivores. The simulation is far away 
-from being perfect, so please don't bother me with stuff like "
-that's unrealistic" or "no way dude!", because I KNOW THAT IT IS NOT 
+consisting of herbivores and carnivores called huntersim. The simulation 
+is far away from being perfect, so please don't bother me with stuff 
+like "that's unrealistic" or "no way dude!", because I KNOW THAT IT IS NOT 
 VERY REALISTIC!
 
 I tried to keep it as _realistic_ as possible. There are still many 
@@ -25,13 +24,13 @@ don't move diagonally. They can only move on the x and y axis.
 
 
 2. Why did you do this?
-#############################
+########################################################
 
 I was bored.
 
 
 3. Prerequisites
-#############################
+########################################################
 
 You'll need a operating system with a terminal and ncurses installed. 
 Nearly every current Linux distribution should do the thing. The only 
@@ -41,26 +40,26 @@ install it with the package manager of your choice (apt-get/yast/whatever).
 
 
 4. Features
-#############################
+########################################################
 
-Hunting skills and escape skills are passed on the "kids". The kid 
-always gets the average between the two parent animals. Talented hunters 
-also get rewarded by obtaining some skill points. Same happens to talented 
+Hunting skills and escape skills are passed over to the "kids". The kid 
+always gets the average value between the two parent animals. Talented hunters 
+also get rewarded by obtaining some skill points. The same happens to talented 
 herbivores which manage to escape. I know this is not really realistic, 
 but it's not THAT far away from the real world.
 
 
 5. Configuration
-#############################
+########################################################
 
-Nearly everything can be tweaked by editing Territory.pm. This is the module 
-where all the values are defined. The default values should be quite reasonable, 
-but tweak it for your needs where you want. Just read the comments to 
-understand what the values stand for.
+Nearly everything can be tweaked by editing modules/Territory.pm. 
+This is the module where all the values are defined. The default values 
+should be quite reasonable, but tweak it for your needs where you want. 
+Just read the comments to understand what the values stand for.
 
 
 6. How to run
-#############################
+########################################################
 
 maximize your terminal window
 
@@ -70,8 +69,18 @@ $ ./huntersim
 ... lean back and watch ...
 
 
-7. Bugs and known issues
-#############################
+7. I don't like this behaviour of animal X, change it!
+########################################################
+
+I won't change anything for you. If you want something changed,
+open the editor of your choice and do it yourself. If you think
+your changes are reasonable and make sense, send a patch to me or 
+drop me a line with your github account so I can add you to the
+collaborators. After that you can simply upload your changes.
+
+
+8. Bugs and known issues
+########################################################
 
  - all the animals can only see and move on the x and y axis.
 
@@ -88,10 +97,10 @@ $ ./huntersim
    are hermaphrodites
 
 
-8. License stuff
-#############################
+9. License stuff
+########################################################
 
 Because I don't think that anyone wants to use this in a proprietary 
 product I give erveyone the "do whatever you want" - license. As long as I don't 
-say anything different you can do whatever you want.
+say anything different you can do whatever you want. Just tell me if you do.
 
